@@ -312,5 +312,3 @@ class PdfConverter:
         except Exception as e:
             logger.error(f"Error processing PDF: {str(e)}")
             return {'status': 'error', 'message': str(e)}
-
-
