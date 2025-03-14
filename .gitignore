@@ -18,7 +18,7 @@ lib/
 lib64/
 parts/
 sdist/
-change-dates.sh
+startup.sh
 var/
 wheels/
 share/python-wheels/
