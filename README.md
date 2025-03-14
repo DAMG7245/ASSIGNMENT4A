@@ -13,7 +13,8 @@ The application is built with a modern stack including Streamlit for the fronten
 
 ## Architecture
 
-![Architecture Diagram](./docs/architecture.png)
+![pdf_query_assistant_architecture](https://github.com/user-attachments/assets/c0446ca5-f13c-4de8-8695-0281500dbe22)
+
 
 The system consists of three main components:
 
