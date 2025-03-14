@@ -5,7 +5,7 @@ import os
 import datetime
 import random
 import string
-
+import datetime as dt
 # Alternative function to generate a unique ID without using uuid
 def generate_unique_id(length=12):
     """Generate a random ID string"""
@@ -46,7 +46,7 @@ def query_llm(prompt, model="gpt-4o", operation_type="chat"):
         if 'active_document' not in st.session_state or not st.session_state.active_document:
             st.error("No active document selected")
             return None
-            
+        print("This is a prmompt",prompt)
         # Prepare the payload based on operation type
         if operation_type == "chat" or operation_type == "ask_question":
             endpoint = f"{PDF_API_URL}/ask_question/"
@@ -841,7 +841,7 @@ def show_chat_ai():
                 st.session_state.chat_history.append({
                     "role": "user",
                     "content": user_input,
-                    "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 })
                 
                 # Process the question
@@ -860,7 +860,7 @@ def show_chat_ai():
                             },
                             "model": llm_model_id,
                             "processing_time": response["processing_time"],
-                            "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         })
                         
                         # Add to usage history

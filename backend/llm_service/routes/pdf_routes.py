@@ -176,7 +176,7 @@ async def summarize_pdf_content(
     llm_controller: LLMController = Depends(lambda: LLMController())
 ):
     """
-    Generate a summary using content_id or folder_path to retrieve content
+    Generate a summary using content_id to retrieve content and store summaries in Redis.
     """
     try:
         content_text = None
@@ -185,27 +185,33 @@ async def summarize_pdf_content(
         
         logger.info(f"Request received - content_id: {content_id}, folder_path: {folder_path}")
         
-        # First check if content is provided directly in the request
+        # First, check if content is provided directly in the request
         content_text = request.get("content")
-        if not content_text and "markdown_content" in request:
-            content_text = request.get("markdown_content")
         
-        # If content is not in the request and content_id is provided, 
+        # If content is not in the request and content_id is provided,
         # try to get it from Redis directly
         if not content_text and content_id:
             try:
                 from utils.redis_utils import get_redis_connection
                 redis_client = get_redis_connection()
                 
-                # Try to get content from Redis with the key format "markdown:{content_id}"
-                redis_key = f"markdown:{content_id}"
-                redis_data = redis_client.get(redis_key)
+                # Check if the summary is already in Redis
+                redis_key_summary = f"summary:{content_id}"
+                redis_summary = redis_client.get(redis_key_summary)
+                if redis_summary:
+                    # If summary exists in Redis, return it directly
+                    logger.info(f"Summary retrieved from Redis for content_id {content_id}")
+                    return json.loads(redis_summary)
+                
+                # If no summary in Redis, get content
+                redis_key_content = f"markdown:{content_id}"
+                redis_data = redis_client.get(redis_key_content)
                 
                 if redis_data:
                     import json
                     data_dict = json.loads(redis_data)
                     content_text = data_dict.get("content")
-                    logger.info(f"Content retrieved from Redis for ID {content_id}: {bool(content_text)}")
+                    logger.info(f"Content retrieved from Redis for content_id {content_id}: {bool(content_text)}")
             except Exception as e:
                 logger.error(f"Error retrieving content from Redis: {str(e)}")
         
@@ -213,7 +219,6 @@ async def summarize_pdf_content(
         # we could try to download the file (implementation dependent on your system)
         if not content_text and folder_path:
             # Placeholder for your file download logic
-            # This depends on how your system handles file downloads
             logger.warning(f"Content not found in Redis, folder_path provided but no handler implemented")
         
         # If we don't have content, raise an error
@@ -259,6 +264,19 @@ async def summarize_pdf_content(
         if "title" in request:
             metadata["title"] = request["title"]
         
+        # Store the summary in Redis for future use
+        try:
+            redis_key_summary = f"summary:{content_id}"
+            redis_client.set(redis_key_summary, json.dumps({
+                "summary": summary,
+                "model": result["model"],
+                "usage": result.get("usage"),
+                "metadata": metadata
+            }), ex=86400)  # Set expiration time for 1 day (86400 seconds)
+            logger.info(f"Summary stored in Redis for content_id {content_id}")
+        except Exception as e:
+            logger.error(f"Error storing summary in Redis: {str(e)}")
+        
         return {
             "summary": summary,
             "model": result["model"],
@@ -270,6 +288,7 @@ async def summarize_pdf_content(
     except Exception as e:
         logger.error(f"Error summarizing content: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 def _format_summary(text: str) -> str:
     """
     Format and clean up the generated summary
@@ -296,42 +315,186 @@ def _format_summary(text: str) -> str:
     
     return result
 
+# @router.post("/ask_question/", response_model=PDFQuestionResponse)
+# async def ask_question(request: PDFQuestionRequest):
+#     """
+#     Answer a question about the PDF content
+#     """
+#     try:
+#         # Get the PDF content using folder path
+#         content = pdf_controller.get_pdf_content_by_path(request.folder_path)
+#         if not content:
+#             raise HTTPException(status_code=404, detail=f"PDF content with folder path {request.folder_path} not found")
+        
+#         # Create prompt for question answering
+#         prompt = f"""Please answer the following question about this document:
+
+# Document content:
+# {content['content']}
+
+# Question: {request.question}
+
+# Provide a detailed answer based only on the information in the document. If the information to answer the question is not in the document, state that clearly."""
+        
+#         # Generate answer using LLM
+#         result = llm_controller.chat(
+#             messages=[
+#                 {"role": "system", "content": "You are a helpful assistant that answers questions about documents based solely on their content."},
+#                 {"role": "user", "content": prompt}
+#             ],
+#             model=request.model,
+#             max_tokens=request.max_tokens,
+#             temperature=0.3,  # Lower temperature for more factual answers
+#         )
+        
+#         return {
+#             "folder_path": request.folder_path,
+#             "question": request.question,
+#             "answer": result["text"],
+#             "model": result["model"],
+#             "usage": result.get("usage")
+#         }
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Error answering question: {str(e)}")
+#         raise HTTPException(status_code=500, detail=str(e))
 @router.post("/ask_question/", response_model=PDFQuestionResponse)
-async def ask_question(request: PDFQuestionRequest):
+async def ask_question(
+    request: dict,  # Use a dict to accept any combination of fields
+    llm_controller: LLMController = Depends(lambda: LLMController())
+):
     """
-    Answer a question about the PDF content
+    Answer a question about the PDF content, with Redis caching for content and answers.
     """
     try:
-        # Get the PDF content using folder path
-        content = pdf_controller.get_pdf_content_by_path(request.folder_path)
-        if not content:
-            raise HTTPException(status_code=404, detail=f"PDF content with folder path {request.folder_path} not found")
+        content_text = None
+        content_id = request.get("content_id")
+        folder_path = request.get("folder_path")
+        question = request.get("question")
         
-        # Create prompt for question answering
-        prompt = f"""Please answer the following question about this document:
+        logger.info(f"Question request received - content_id: {content_id}, folder_path: {folder_path}, question: {question}")
+        
+        if not question:
+            raise HTTPException(status_code=400, detail="Question is required")
+        
+        # First, check if content is provided directly in the request
+        content_text = request.get("content")
+        
+        # Generate a cache key for the question
+        cache_key = None
+        if content_id and question:
+            cache_key = f"answer:{content_id}:{hash(question)}"
+            
+            # Try to get previously cached answer from Redis
+            try:
+                from utils.redis_utils import get_redis_connection
+                redis_client = get_redis_connection()
+                
+                # Check if the answer is already in Redis
+                cached_answer = redis_client.get(cache_key)
+                if cached_answer:
+                    # If answer exists in Redis, return it directly
+                    logger.info(f"Answer retrieved from Redis for question about content_id {content_id}")
+                    return json.loads(cached_answer)
+                
+                # If answer not in Redis but content_id provided, try to get content from Redis
+                if not content_text and content_id:
+                    redis_key_content = f"markdown:{content_id}"
+                    redis_data = redis_client.get(redis_key_content)
+                    
+                    if redis_data:
+                        import json
+                        data_dict = json.loads(redis_data)
+                        content_text = data_dict.get("content")
+                        logger.info(f"Content retrieved from Redis for content_id {content_id}: {bool(content_text)}")
+            except Exception as e:
+                logger.error(f"Error accessing Redis: {str(e)}")
+        
+        # If we still don't have content and we have a folder_path, 
+        # we could try to download the file (implementation dependent on your system)
+        if not content_text and folder_path:
+            try:
+                # Try to get content using the PDF controller
+                content_data = pdf_controller.get_pdf_content_by_path(folder_path)
+                if content_data and "content" in content_data:
+                    content_text = content_data["content"]
+                    logger.info(f"Content retrieved from file system for folder_path {folder_path}")
+            except Exception as e:
+                logger.error(f"Error retrieving content from file system: {str(e)}")
+        
+        # If we don't have content, raise an error
+        if not content_text:
+            raise HTTPException(
+                status_code=400, 
+                detail="Could not retrieve content. Provide content directly or a valid content_id or folder_path."
+            )
+        
+        # Extract other parameters
+        model = request.get("model")
+        max_tokens = request.get("max_tokens", 1000)
+        temperature = request.get("temperature", 0.3)
+        metadata = request.get("metadata", {})
+        
+        # Get user's custom prompt if provided, otherwise use default
+        custom_prompt = request.get("prompt")
+        
+        if custom_prompt:
+            prompt = f"{custom_prompt}\n\nDocument: {content_text}\n\nQuestion: {question}"
+        else:
+            # Create a general purpose prompt
+            prompt = f"""Please answer the following question about this document:
 
 Document content:
-{content['content']}
+{content_text}
 
-Question: {request.question}
+Question: {question}
 
 Provide a detailed answer based only on the information in the document. If the information to answer the question is not in the document, state that clearly."""
         
         # Generate answer using LLM
-        result = llm_controller.chat(
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that answers questions about documents based solely on their content."},
-                {"role": "user", "content": prompt}
-            ],
-            model=request.model,
-            max_tokens=request.max_tokens,
-            temperature=0.3,  # Lower temperature for more factual answers
+        result = llm_controller.generate(
+            prompt=prompt,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
         )
         
+        # Post-process the answer
+        answer = _format_answer(result["text"])
+        
+        # Build metadata
+        if not metadata:
+            metadata = {}
+            
+        if folder_path:
+            metadata["folder_path"] = folder_path
+        
+        if content_id:
+            metadata["content_id"] = content_id
+        
+        # Store the answer in Redis for future use if we have a cache key
+        if cache_key:
+            try:
+                from utils.redis_utils import get_redis_connection
+                redis_client = get_redis_connection()
+                
+                redis_client.set(cache_key, json.dumps({
+                    "folder_path": folder_path,
+                    "question": question,
+                    "answer": answer,
+                    "model": result["model"],
+                    "usage": result.get("usage"),
+                    "metadata": metadata
+                }), ex=86400)  # Set expiration time for 1 day (86400 seconds)
+                logger.info(f"Answer stored in Redis for question about content_id {content_id}")
+            except Exception as e:
+                logger.error(f"Error storing answer in Redis: {str(e)}")
+        
         return {
-            "folder_path": request.folder_path,
-            "question": request.question,
-            "answer": result["text"],
+            "folder_path": folder_path,
+            "question": question,
+            "answer": answer,
             "model": result["model"],
             "usage": result.get("usage")
         }
@@ -340,6 +503,24 @@ Provide a detailed answer based only on the information in the document. If the 
     except Exception as e:
         logger.error(f"Error answering question: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+def _format_answer(text: str) -> str:
+    """
+    Format and clean up the generated answer
+    """
+    # Remove any redundant phrases that models sometimes add
+    cleanup_phrases = [
+        "Here is the answer:",
+        "Answer:",
+        "To answer your question:"
+    ]
+    
+    result = text
+    for phrase in cleanup_phrases:
+        if result.startswith(phrase):
+            result = result[len(phrase):].strip()
+    
+    return result
 
 @router.get("/list_all_pdfs/")
 async def list_all_pdfs():
