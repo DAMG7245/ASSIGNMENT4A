@@ -6,7 +6,9 @@ set -e
 # Configuration
 ENTERPRISE_PORT=8000
 OPENSOURCE_PORT=8001
+LLM_PORT=8002
 FRONTEND_PORT=8502
+REDIS_PORT=6379
 
 # Function to create and activate virtual environment
 setup_venv() {
@@ -28,6 +30,53 @@ check_port() {
     fi
 }
 
+# Function to install and start Redis
+setup_redis() {
+    echo "Installing Redis..."
+    sudo apt update
+    sudo apt install -y redis-server
+    
+    # Check if Redis port is in use
+    check_port $REDIS_PORT
+    
+    echo "Starting Redis server..."
+    redis-server --daemonize yes
+    sleep 2
+    
+    # Verify Redis is running
+    if redis-cli ping | grep -q "PONG"; then
+        echo "Redis server is running successfully"
+    else
+        echo "Failed to start Redis server"
+        exit 1
+    fi
+}
+
+# Function to create .env file for LLM service
+create_llm_env() {
+    local env_file="backend/llm_service/.env"
+    echo "Creating .env file for LLM service at $env_file"
+    
+    cat > "$env_file" << EOF
+# OpenAI Configuration
+OPENAI_API_KEY=""
+
+# Anthropic Configuration
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# Google Configuration
+GOOGLE_API_KEY=""
+
+# DeepSeek Configuration
+DEEPSEEK_API_KEY=sk-""
+
+# xAI Configuration (for Grok models)
+XAI_API_KEY=your_xai_api_key_here
+EOF
+
+    echo "Created .env file for LLM service. Please update with your actual API keys."
+}
+
 # Function to start a service
 start_service() {
     local service=$1
@@ -40,6 +89,13 @@ start_service() {
         # Enterprise-specific environment variables
         export PDF_SERVICES_CLIENT_ID=${PDF_SERVICES_CLIENT_ID:-"YOUR_CLIENT_ID"}
         export PDF_SERVICES_CLIENT_SECRET=${PDF_SERVICES_CLIENT_SECRET:-"YOUR_CLIENT_SECRET"}
+    fi
+    
+    if [ "$service" = "llm" ]; then
+        # Create .env file if it doesn't exist
+        if [ ! -f ".env" ]; then
+            create_llm_env
+        fi
     fi
     
     # Common AWS credentials
@@ -58,7 +114,10 @@ main() {
     # Install system dependencies
     echo "Updating system and installing dependencies..."
     sudo apt update
-    sudo apt install -y python3 python3-pip
+    sudo apt install -y python3 python3-pip lsof
+    
+    # Install and start Redis
+    setup_redis
     
     # Store initial directory
     BASE_DIR=$(pwd)
@@ -67,6 +126,8 @@ main() {
     start_service "enterprise" $ENTERPRISE_PORT
     cd "$BASE_DIR"
     start_service "opensource" $OPENSOURCE_PORT
+    cd "$BASE_DIR"
+    start_service "llm" $LLM_PORT
     
     # Check and clear frontend port if needed
     check_port $FRONTEND_PORT
@@ -83,7 +144,9 @@ cleanup() {
     echo "Cleaning up processes..."
     pkill -f "uvicorn.*:$ENTERPRISE_PORT" || true
     pkill -f "uvicorn.*:$OPENSOURCE_PORT" || true
+    pkill -f "uvicorn.*:$LLM_PORT" || true
     pkill -f "streamlit.*:$FRONTEND_PORT" || true
+    redis-cli shutdown || true
 }
 
 # Set up trap for cleanup on script exit
