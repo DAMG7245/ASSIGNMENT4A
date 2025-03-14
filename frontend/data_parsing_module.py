@@ -66,7 +66,7 @@ def show_data_parsing():
     """, unsafe_allow_html=True)
     
     # Environment variables
-    API_EN_URL = os.getenv('API_EN_URL', 'http://enterprise-service:8000')
+    API_EN_URL = os.getenv('API_EN_URL', 'http://localhost:8000')
     API_OP_URL = os.getenv('API_OP_URL', 'http://localhost:8001')
     
     # Initialize session state if not already initialized
@@ -209,7 +209,7 @@ def show_data_parsing():
 
 def extract_pdf_text(uploaded_file, extraction_type="enterprise"):
     """Extract text from PDF using either enterprise or opensource solution"""
-    API_EN_URL = os.getenv('API_EN_URL', 'http://enterprise-service:8000')
+    API_EN_URL = os.getenv('API_EN_URL', 'http://localhost:8000')
     API_OP_URL = os.getenv('API_OP_URL', 'http://localhost:8001')
     
     pdf_path = None
@@ -302,7 +302,7 @@ def extract_pdf_text(uploaded_file, extraction_type="enterprise"):
 
 def scrape_website(url, scraping_type="enterprise"):
     """Scrape content from website using either enterprise or opensource solution"""
-    API_EN_URL = os.getenv('API_EN_URL', 'http://enterprise-service:8000')
+    API_EN_URL = os.getenv('API_EN_URL', 'http://localhost:8000')
     API_OP_URL = os.getenv('API_OP_URL', 'http://localhost:8001')
     
     try:
