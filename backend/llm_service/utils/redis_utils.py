@@ -13,7 +13,7 @@ class RedisManager:
     def __init__(self):
         """Initialize Redis connection"""
         # Set up Redis connection
-        redis_host = os.getenv("REDIS_HOST", "localhost")
+        redis_host = os.getenv("REDIS_HOST", "redis")
         redis_port = int(os.getenv("REDIS_PORT", 6379))
         redis_db = int(os.getenv("REDIS_DB", 0))
         redis_password = os.getenv("REDIS_PASSWORD", None)
@@ -224,7 +224,7 @@ def get_redis_connection():
     """
     try:
         # Get Redis configuration from environment variables or use defaults
-        redis_host = os.getenv('REDIS_HOST', 'localhost')
+        redis_host = os.getenv('REDIS_HOST', 'redis')
         redis_port = int(os.getenv('REDIS_PORT', 6379))
         redis_db = int(os.getenv('REDIS_DB', 0))
         redis_password = os.getenv('REDIS_PASSWORD', None)

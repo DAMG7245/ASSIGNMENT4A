@@ -15,13 +15,25 @@ def estimate_cost(model, input_tokens, output_tokens):
     """Estimate cost based on token usage and model"""
     # Define pricing per 1K tokens
     model_pricing = {
-        "gpt-4o": {"input": 0.01, "output": 0.03},
-        "claude-3-opus-20240229": {"input": 0.015, "output": 0.075},
-        "claude-3-sonnet-20240229": {"input": 0.008, "output": 0.024},
-        "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},
-        "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
-        "gemini-pro": {"input": 0.0005, "output": 0.0015},
-        "gemini-ultra": {"input": 0.001, "output": 0.003}
+        # OpenAI models
+        "openai/gpt-4o": {"input": 0.01, "output": 0.03},
+        "openai/gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
+        "openai/gpt-4-mini": {"input": 0.002, "output": 0.006},  # Using mini instead of turbo
+        
+        # Anthropic models
+        "anthropic/claude-3-opus-20240229": {"input": 0.015, "output": 0.075},
+        "anthropic/claude-3-sonnet-20240229": {"input": 0.008, "output": 0.024},
+        
+        # Perplexity model
+        "perplexity/llama-3-sonar-small-32k": {"input": 0.0008, "output": 0.0016},  # Example pricing
+        
+        # DeepSeek model
+        "deepseek/deepseek-coder": {"input": 0.0005, "output": 0.0015},  # Example pricing
+        
+        # Google Gemini models
+        "google/gemini-pro": {"input": 0.0005, "output": 0.0015},
+        "google/gemini-1.5-pro": {"input": 0.0005, "output": 0.0015},
+        "google/gemini-ultra": {"input": 0.001, "output": 0.003}
     }
     
     # Get pricing for model or use default
@@ -38,7 +50,7 @@ def query_llm(prompt, model="gpt-4o", operation_type="chat"):
     Send a query to the LLM API
     """
     API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:8003')
-    API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8003')
+    API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://llm-service:8003')
     PDF_API_URL = f"{API_BACKEND_URL}/pdf"
     
     try:
@@ -130,7 +142,7 @@ def query_llm(prompt, model="gpt-4o", operation_type="chat"):
 def summarize_document(folder_path, model):
     """Generate a summary of the document"""
     with st.spinner("Generating document summary..."):
-        API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8003')
+        API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://llm-service:8003')
         
         # Ensure we have the content_id
         if 'active_document' not in st.session_state or not st.session_state.active_document:
@@ -222,7 +234,7 @@ def summarize_document(folder_path, model):
 def extract_key_points(folder_path, model):
     """Extract key points from the document"""
     with st.spinner("Extracting key points..."):
-        API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8003')
+        API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://llm-service:8003')
         
         # Ensure we have the content_id
         if 'active_document' not in st.session_state or not st.session_state.active_document:
@@ -457,8 +469,8 @@ def show_chat_ai():
     """, unsafe_allow_html=True)
     
     # API endpoints
-    API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:8003')
-    API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8003')
+    API_BASE_URL = os.getenv('API_BASE_URL', 'http://llm-service:8003')
+    API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://llm-service:8003')
 
     # Initialize session states
     if 'chat_history' not in st.session_state:
@@ -491,19 +503,29 @@ def show_chat_ai():
                     })
             else:
                 # Fallback to default models
-                st.session_state.available_llms = [
-                    {"id": "gpt-4o", "name": "GPT-4o", "provider": "OpenAI"},
-                    {"id": "claude-3-sonnet-20240229", "name": "Claude 3 Sonnet", "provider": "Anthropic"},
-                    {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo", "provider": "OpenAI"},
-                    {"id": "gemini-pro", "name": "Gemini Pro", "provider": "Google"}
-                ]
+               st.session_state.available_llms = [
+                {"id": "gpt-4o", "name": "GPT-4o", "provider": "OpenAI"},
+                {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo", "provider": "OpenAI"},
+                {"id": "gpt-4-mini", "name": "GPT-4 Mini", "provider": "OpenAI"},
+                {"id": "claude-3-opus-20240229", "name": "Claude 3 Opus", "provider": "Anthropic"},
+                {"id": "claude-3-sonnet-20240229", "name": "Claude 3 Sonnet", "provider": "Anthropic"},
+                {"id": "gemini-pro", "name": "Gemini Pro", "provider": "Google"},
+                {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "provider": "Google"},
+                {"id": "llama-3-sonar-small-32k", "name": "Llama 3 Sonar Small", "provider": "Perplexity"},
+                {"id": "deepseek-coder", "name": "DeepSeek Coder", "provider": "DeepSeek"}
+            ]
         except Exception as e:
             # Fallback to default models if request fails
             st.session_state.available_llms = [
                 {"id": "gpt-4o", "name": "GPT-4o", "provider": "OpenAI"},
-                {"id": "claude-3-sonnet-20240229", "name": "Claude 3 Sonnet", "provider": "Anthropic"},
                 {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo", "provider": "OpenAI"},
-                {"id": "gemini-pro", "name": "Gemini Pro", "provider": "Google"}
+                {"id": "gpt-4-mini", "name": "GPT-4 Mini", "provider": "OpenAI"},
+                {"id": "claude-3-opus-20240229", "name": "Claude 3 Opus", "provider": "Anthropic"},
+                {"id": "claude-3-sonnet-20240229", "name": "Claude 3 Sonnet", "provider": "Anthropic"},
+                {"id": "gemini-pro", "name": "Gemini Pro", "provider": "Google"},
+                {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "provider": "Google"},
+                {"id": "llama-3-sonar-small-32k", "name": "Llama 3 Sonar Small", "provider": "Perplexity"},
+                {"id": "deepseek-coder", "name": "DeepSeek Coder", "provider": "DeepSeek"}
             ]
     
     # Initialize token usage
@@ -540,16 +562,37 @@ def show_chat_ai():
         
         # Get model pricing from backend (in a real app)
         # For this example, we'll use hardcoded prices
-        model_prices = {
-            "gpt-4o": {"input": "$0.01/1K tokens", "output": "$0.03/1K tokens"},
-            "claude-3-sonnet-20240229": {"input": "$0.008/1K tokens", "output": "$0.024/1K tokens"},
-            "gpt-3.5-turbo": {"input": "$0.0005/1K tokens", "output": "$0.0015/1K tokens"},
-            "gemini-pro": {"input": "$0.0005/1K tokens", "output": "$0.0015/1K tokens"}
-        }
+        # model_prices = {
+        #     "gpt-4o": {"input": "$0.01/1K tokens", "output": "$0.03/1K tokens"},
+        #     "claude-3-sonnet-20240229": {"input": "$0.008/1K tokens", "output": "$0.024/1K tokens"},
+        #     "gpt-3.5-turbo": {"input": "$0.0005/1K tokens", "output": "$0.0015/1K tokens"},
+        #     "gemini-pro": {"input": "$0.0005/1K tokens", "output": "$0.0015/1K tokens"}
+        # }
+        model_pricing = {
+        # OpenAI models
+        "openai/gpt-4o": {"input": 0.01, "output": 0.03},
+        "openai/gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
+        "openai/gpt-4-mini": {"input": 0.002, "output": 0.006},  # Using mini instead of turbo
+        
+        # Anthropic models
+        "anthropic/claude-3-opus-20240229": {"input": 0.015, "output": 0.075},
+        "anthropic/claude-3-sonnet-20240229": {"input": 0.008, "output": 0.024},
+        
+        # Perplexity model
+        "perplexity/llama-3-sonar-small-32k": {"input": 0.0008, "output": 0.0016},  # Example pricing
+        
+        # DeepSeek model
+        "deepseek/deepseek-coder": {"input": 0.0005, "output": 0.0015},  # Example pricing
+        
+        # Google Gemini models
+        "google/gemini-pro": {"input": 0.0005, "output": 0.0015},
+        "google/gemini-1.5-pro": {"input": 0.0005, "output": 0.0015},
+        "google/gemini-ultra": {"input": 0.001, "output": 0.003}
+    }
         
         # Show pricing for selected model
-        if llm_model_id in model_prices:
-            price_info = model_prices[llm_model_id]
+        if llm_model_id in model_pricing:
+            price_info = model_pricing[llm_model_id]
             st.markdown(f"""
                 **Pricing for selected model:**
                 - Input: {price_info['input']}
