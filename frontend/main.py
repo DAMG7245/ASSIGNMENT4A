@@ -117,8 +117,8 @@ if 'available_llms' not in st.session_state:
     ]
 
 # Environment variables - FastAPI backend endpoints
-API_BASE_URL = os.getenv('API_BASE_URL', 'http://enterprise-service:8000')
-API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://enterprise-service:8000')
+API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:8000')
+API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8000')
 LLM_API_URL = f"{API_BACKEND_URL}/llm"
 PDF_API_URL = f"{API_BACKEND_URL}/pdf"
 DOCUMENT_API_URL = f"{API_BACKEND_URL}/document"
