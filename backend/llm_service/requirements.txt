@@ -1,0 +1,12 @@
+
+
+
+
+
+# llm_service/requirements.txt
+litellm>=1.14.0
+openai>=1.0.0
+redis>=4.5.5
+fastapi>=0.100.0
+uvicorn>=0.22.0
+python-dotenv>=1.0.0
