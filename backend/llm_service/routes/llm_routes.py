@@ -97,13 +97,14 @@ async def generate_text(request: GenerateRequest):
             additional_params=request.additional_params
         )
         
-        # Calculate pricing information
-        price_info = controller.calculate_price(
-            model=result["model"],
-            provider=result["provider"],
-            usage=result.get("usage", {})
-        )
-        result["price"] = price_info
+        # Calculate pricing information if method exists
+        if hasattr(controller, 'calculate_price'):
+            price_info = controller.calculate_price(
+                model=result["model"],
+                provider=result["provider"],
+                usage=result.get("usage", {})
+            )
+            result["price"] = price_info
         
         # Optional: Log response to Redis stream
         if redis_manager.is_connected():
@@ -154,13 +155,14 @@ async def generate_chat(request: ChatRequest):
             additional_params=request.additional_params
         )
         
-        # Calculate pricing information
-        price_info = controller.calculate_price(
-            model=result["model"],
-            provider=result["provider"],
-            usage=result.get("usage", {})
-        )
-        result["price"] = price_info
+        # Calculate pricing information if method exists
+        if hasattr(controller, 'calculate_price'):
+            price_info = controller.calculate_price(
+                model=result["model"],
+                provider=result["provider"],
+                usage=result.get("usage", {})
+            )
+            result["price"] = price_info
         
         # Optional: Log response to Redis stream
         if redis_manager.is_connected():
@@ -200,6 +202,10 @@ async def stream_response(request: ChatRequest):
     try:
         logger.info(f"Processing streaming request using model: {request.model or 'default'}")
         
+        # Check if controller has stream method
+        if not hasattr(controller, 'stream'):
+            raise HTTPException(status_code=501, detail="Streaming not implemented")
+            
         def generate_stream():
             for chunk in controller.stream(
                 messages=[{"role": msg.role, "content": msg.content} for msg in request.messages],
@@ -215,6 +221,8 @@ async def stream_response(request: ChatRequest):
             generate_stream(),
             media_type="text/event-stream"
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in streaming: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -225,6 +233,10 @@ async def generate_async(request: GenerateRequest, background_tasks: BackgroundT
     Generate text asynchronously
     """
     try:
+        # Check if controller has generate_async method
+        if not hasattr(controller, 'generate_async'):
+            raise HTTPException(status_code=501, detail="Async generation not implemented")
+            
         task_id = controller.generate_async(
             background_tasks=background_tasks,
             prompt=request.prompt,
@@ -236,6 +248,8 @@ async def generate_async(request: GenerateRequest, background_tasks: BackgroundT
         )
         
         return {"task_id": task_id, "status": "processing"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in async generation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -259,6 +273,10 @@ async def get_price_info(model: str, input_tokens: int = Query(1000), output_tok
     Get pricing information for a specific model
     """
     try:
+        # Check if controller has get_model_price method
+        if not hasattr(controller, 'get_model_price'):
+            raise HTTPException(status_code=501, detail="Price information not implemented")
+            
         price_info = controller.get_model_price(model, input_tokens, output_tokens)
         if not price_info:
             raise HTTPException(status_code=404, detail=f"Price information not available for model {model}")

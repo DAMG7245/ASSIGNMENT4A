@@ -108,13 +108,14 @@ if 'active_document' not in st.session_state:
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 if 'available_llms' not in st.session_state:
-    # This would ideally come from an API call to the backend
-    st.session_state.available_llms = [
-        {"id": "gpt-4o", "name": "GPT-4o", "provider": "OpenAI"},
-        {"id": "claude-3-5-sonnet", "name": "Claude 3.5 Sonnet", "provider": "Anthropic"},
-        {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo", "provider": "OpenAI"},
-        {"id": "llama-3-70b", "name": "Llama 3 70B", "provider": "Meta"}
-    ]
+    # Updated with model formats that work with litellm based on test results
+   st.session_state.available_llms = [
+    {"id": "openai/gpt-4o", "name": "GPT-4o", "provider": "OpenAI"},
+    {"id": "gemini/gemini-1.5-pro", "name": "Gemini Pro", "provider": "Google"},
+    {"id": "deepseek/deepseek-coder", "name": "DeepSeek", "provider": "DeepSeek"},
+    {"id": "anthropic/claude-3-5-sonnet-20240620", "name": "Claude", "provider": "Anthropic"},
+    {"id": "xai/grok-1", "name": "Grok", "provider": "xAI"}
+]
 
 # Environment variables - FastAPI backend endpoints
 API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:8000')
@@ -123,12 +124,13 @@ LLM_API_URL = f"{API_BACKEND_URL}/llm"
 PDF_API_URL = f"{API_BACKEND_URL}/pdf"
 DOCUMENT_API_URL = f"{API_BACKEND_URL}/document"
 
-# Model pricing information (per 1K tokens)
+# Model pricing information (per 1K tokens) - Only for the 5 selected models with working formats
 MODEL_PRICING = {
     "gpt-4o": {"input": 0.01, "output": 0.03},
-    "claude-3-5-sonnet": {"input": 0.008, "output": 0.024},
-    "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
-    "llama-3-70b": {"input": 0.0007, "output": 0.0009}
+    "gemini-1.5-pro": {"input": 0.0005, "output": 0.0015},
+    "deepseek-coder": {"input": 0.0004, "output": 0.0008},
+    "claude-3-5-sonnet-20240620": {"input": 0.008, "output": 0.024},
+    "grok-1": {"input": 0.0, "output": 0.0}
 }
 
 # Initialize token usage tracking
@@ -178,9 +180,6 @@ with st.sidebar:
         st.session_state.current_page = "chat_ai"
         st.rerun()
     
-    
-# Update the last part of your main.py file:
-
 # Render the current page
 if st.session_state.current_page == "home":
     home_module.show_home()

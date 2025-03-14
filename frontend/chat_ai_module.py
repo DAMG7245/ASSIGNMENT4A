@@ -14,14 +14,22 @@ def generate_unique_id(length=12):
 def estimate_cost(model, input_tokens, output_tokens):
     """Estimate cost based on token usage and model"""
     # Define pricing per 1K tokens
+    # model_pricing = {
+    #     "gpt-4o": {"input": 0.01, "output": 0.03},
+    #     "claude-3-opus-20240229": {"input": 0.015, "output": 0.075},
+    #     "claude-3-5-sonnet-20240620": {"input": 0.008, "output": 0.024},
+    #     "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},
+    #     "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
+    #     "gemini-1.5-pro": {"input": 0.0005, "output": 0.0015},
+    #     "gemini-ultra": {"input": 0.001, "output": 0.003}
+    # }
+    
     model_pricing = {
-        "gpt-4o": {"input": 0.01, "output": 0.03},
-        "claude-3-opus-20240229": {"input": 0.015, "output": 0.075},
-        "claude-3-sonnet-20240229": {"input": 0.008, "output": 0.024},
-        "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},
-        "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
-        "gemini-pro": {"input": 0.0005, "output": 0.0015},
-        "gemini-ultra": {"input": 0.001, "output": 0.003}
+    "gpt-4o": {"input": 0.01, "output": 0.03},
+    "gemini-1.5-flash": {"input": 0.0005, "output": 0.0015},
+    "deepseek-r1": {"input": 0.0004, "output": 0.0008},
+    "claude-3-5-sonnet-20240620": {"input": 0.008, "output": 0.024},
+    "grok-2": {"input": 0.0, "output": 0.0}
     }
     
     # Get pricing for model or use default
@@ -33,7 +41,7 @@ def estimate_cost(model, input_tokens, output_tokens):
     
     return input_cost + output_cost
 
-def query_llm(prompt, model="gpt-4o", operation_type="chat"):
+def query_llm(prompt, model="openai/gpt-4o", operation_type="chat", provider="openai"):
     """
     Send a query to the LLM API
     """
@@ -46,7 +54,12 @@ def query_llm(prompt, model="gpt-4o", operation_type="chat"):
         if 'active_document' not in st.session_state or not st.session_state.active_document:
             st.error("No active document selected")
             return None
-            
+        
+        # Extract model name from full ID if it contains a provider prefix
+        model_name = model
+        if "/" in model:
+            provider, model_name = model.split("/", 1)
+        
         # Prepare the payload based on operation type
         if operation_type == "chat" or operation_type == "ask_question":
             endpoint = f"{PDF_API_URL}/ask_question/"
@@ -54,7 +67,8 @@ def query_llm(prompt, model="gpt-4o", operation_type="chat"):
                 "folder_path": st.session_state.active_document.get("folder_path"),
                 "content_id": st.session_state.active_document.get("content_id"),  # Always include content_id
                 "question": prompt,
-                "model": model,
+                "model": model_name,
+                "provider": provider,
                 "max_tokens": 1000
             }
         
@@ -68,7 +82,8 @@ def query_llm(prompt, model="gpt-4o", operation_type="chat"):
             payload = {
                 "folder_path": st.session_state.active_document.get("folder_path"),
                 "content_id": content_id,  # Always include content_id
-                "model": model,
+                "model": model_name,
+                "provider": provider,
                 "max_length": 1000
             }
 
@@ -79,7 +94,8 @@ def query_llm(prompt, model="gpt-4o", operation_type="chat"):
                 "folder_path": st.session_state.active_document.get("folder_path"),
                 "content_id": st.session_state.active_document.get("content_id"),  # Always include content_id
                 "question": "Extract and list the key points from this document.",
-                "model": model,
+                "model": model_name,
+                "provider": provider,   
                 "max_tokens": 1000
             }
         
@@ -105,7 +121,7 @@ def query_llm(prompt, model="gpt-4o", operation_type="chat"):
             output_tokens = result.get("usage", {}).get("completion_tokens", 0)
             
             # Estimate cost based on model
-            cost = estimate_cost(model, input_tokens, output_tokens)
+            cost = estimate_cost(model_name, input_tokens, output_tokens)
             
             # Update total token usage for the session
             st.session_state.total_token_usage["input_tokens"] += input_tokens
@@ -127,7 +143,7 @@ def query_llm(prompt, model="gpt-4o", operation_type="chat"):
         st.error(f"Error communicating with PDF API: {str(e)}")
         return None
 
-def summarize_document(folder_path, model):
+def summarize_document(folder_path, model, provider):
     """Generate a summary of the document"""
     with st.spinner("Generating document summary..."):
         API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8003')
@@ -140,11 +156,17 @@ def summarize_document(folder_path, model):
         # Get the content_id from active document
         content_id = st.session_state.active_document.get("content_id")
         
-        # Prepare payload with explicit content_id
+        # Extract model name from full ID if it contains a provider prefix
+        model_name = model
+        if "/" in model:
+            provider, model_name = model.split("/", 1)
+        
+        # Prepare payload with explicit content_id and proper model format
         payload = {
             "folder_path": folder_path,
             "content_id": content_id,  # Always include content_id
-            "model": model,
+            "model": model_name,
+            "provider": provider,
             "max_length": 1000
         }
         
@@ -163,7 +185,7 @@ def summarize_document(folder_path, model):
             # Extract token usage
             input_tokens = result.get("usage", {}).get("prompt_tokens", 0)
             output_tokens = result.get("usage", {}).get("completion_tokens", 0)
-            cost = estimate_cost(model, input_tokens, output_tokens)
+            cost = estimate_cost(model_name, input_tokens, output_tokens)
             
             # Update session token usage
             st.session_state.total_token_usage["input_tokens"] += input_tokens
@@ -219,7 +241,7 @@ def summarize_document(folder_path, model):
             st.error(f"Error generating summary: {response.text}")
             return None
 
-def extract_key_points(folder_path, model):
+def extract_key_points(folder_path, model, provider):
     """Extract key points from the document"""
     with st.spinner("Extracting key points..."):
         API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8003')
@@ -232,12 +254,18 @@ def extract_key_points(folder_path, model):
         # Get the content_id from active document
         content_id = st.session_state.active_document.get("content_id")
         
+        # Extract model name from full ID if it contains a provider prefix
+        model_name = model
+        if "/" in model:
+            provider, model_name = model.split("/", 1)
+        
         # Use the ask_question endpoint with a specific question
         payload = {
             "folder_path": folder_path,
             "content_id": content_id,  # Always include content_id
             "question": "Extract and list the key points from this document.",
-            "model": model,
+            "model": model_name,
+            "provider": provider,
             "max_tokens": 1000
         }
         
@@ -256,7 +284,7 @@ def extract_key_points(folder_path, model):
             # Extract token usage
             input_tokens = result.get("usage", {}).get("prompt_tokens", 0)
             output_tokens = result.get("usage", {}).get("completion_tokens", 0)
-            cost = estimate_cost(model, input_tokens, output_tokens)
+            cost = estimate_cost(model_name, input_tokens, output_tokens)
             
             # Update session token usage
             st.session_state.total_token_usage["input_tokens"] += input_tokens
@@ -311,7 +339,6 @@ def extract_key_points(folder_path, model):
         else:
             st.error(f"Error extracting key points: {response.text}")
             return None
-
 def new_conversation():
     """Create a new conversation"""
     st.session_state.chat_history = []
@@ -491,20 +518,22 @@ def show_chat_ai():
                     })
             else:
                 # Fallback to default models
-                st.session_state.available_llms = [
-                    {"id": "gpt-4o", "name": "GPT-4o", "provider": "OpenAI"},
-                    {"id": "claude-3-sonnet-20240229", "name": "Claude 3 Sonnet", "provider": "Anthropic"},
-                    {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo", "provider": "OpenAI"},
-                    {"id": "gemini-pro", "name": "Gemini Pro", "provider": "Google"}
-                ]
+                 st.session_state.available_llms = [
+    {"id": "openai/gpt-4o", "name": "GPT-4o", "provider": "OpenAI"},
+    {"id": "gemini/gemini-1.5-pro", "name": "Gemini Pro", "provider": "Google"},
+    {"id": "deepseek/deepseek-coder", "name": "DeepSeek", "provider": "DeepSeek"},
+    {"id": "anthropic/claude-3-5-sonnet-20240620", "name": "Claude", "provider": "Anthropic"},
+    {"id": "xai/grok-1", "name": "Grok", "provider": "xAI"}
+]
         except Exception as e:
             # Fallback to default models if request fails
-            st.session_state.available_llms = [
-                {"id": "gpt-4o", "name": "GPT-4o", "provider": "OpenAI"},
-                {"id": "claude-3-sonnet-20240229", "name": "Claude 3 Sonnet", "provider": "Anthropic"},
-                {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo", "provider": "OpenAI"},
-                {"id": "gemini-pro", "name": "Gemini Pro", "provider": "Google"}
-            ]
+             st.session_state.available_llms = [
+    {"id": "openai/gpt-4o", "name": "GPT-4o", "provider": "OpenAI"},
+    {"id": "gemini/gemini-1.5-pro", "name": "Gemini Pro", "provider": "Google"},
+    {"id": "deepseek/deepseek-coder", "name": "DeepSeek", "provider": "DeepSeek"},
+    {"id": "anthropic/claude-3-5-sonnet-20240620", "name": "Claude", "provider": "Anthropic"},
+    {"id": "xai/grok-1", "name": "Grok", "provider": "xAI"}
+]
     
     # Initialize token usage
     if 'total_token_usage' not in st.session_state:
@@ -522,7 +551,20 @@ def show_chat_ai():
     with st.sidebar:
         st.header("📊 Agent Settings")
         
-        # LLM Model Selection
+        # # LLM Model Selection
+        # llm_options = [(model["id"], f"{model['name']} ({model['provider']})") 
+        #                 for model in st.session_state.available_llms]
+        # selected_model_option = st.selectbox(
+        #     "Select LLM Model",
+        #     options=[option[1] for option in llm_options],
+        #     index=0
+        # )
+        
+        # # Get the model ID from the selected option
+        # selected_model_index = [option[1] for option in llm_options].index(selected_model_option)
+        # llm_model_id = llm_options[selected_model_index][0]
+        
+            # LLM Model Selection
         llm_options = [(model["id"], f"{model['name']} ({model['provider']})") 
                         for model in st.session_state.available_llms]
         selected_model_option = st.selectbox(
@@ -530,10 +572,16 @@ def show_chat_ai():
             options=[option[1] for option in llm_options],
             index=0
         )
-        
-        # Get the model ID from the selected option
+
+        # Get the model ID and provider from the selected option
         selected_model_index = [option[1] for option in llm_options].index(selected_model_option)
         llm_model_id = llm_options[selected_model_index][0]
+
+        # Get the provider from the original list
+        selected_model = st.session_state.available_llms[selected_model_index]
+        provider = selected_model["provider"].lower()  # Convert to lowercase to match API expectations
+        st.session_state.llm_model_id = llm_model_id      
+            
         
         # Display token usage and pricing info
         st.info(f"Model usage is tracked and billed per token. Input tokens and output tokens have different pricing.")
@@ -542,9 +590,9 @@ def show_chat_ai():
         # For this example, we'll use hardcoded prices
         model_prices = {
             "gpt-4o": {"input": "$0.01/1K tokens", "output": "$0.03/1K tokens"},
-            "claude-3-sonnet-20240229": {"input": "$0.008/1K tokens", "output": "$0.024/1K tokens"},
+            "claude-3-5-sonnet-20240620": {"input": "$0.008/1K tokens", "output": "$0.024/1K tokens"},
             "gpt-3.5-turbo": {"input": "$0.0005/1K tokens", "output": "$0.0015/1K tokens"},
-            "gemini-pro": {"input": "$0.0005/1K tokens", "output": "$0.0015/1K tokens"}
+            "gemini-1.5-pro": {"input": "$0.0005/1K tokens", "output": "$0.0015/1K tokens"}
         }
         
         # Show pricing for selected model
@@ -662,11 +710,11 @@ def show_chat_ai():
         
         with col1:
             if st.button("Get Summary", type="primary", use_container_width=True):
-                summarize_document(st.session_state.active_document["folder_path"], llm_model_id)
+                summarize_document(st.session_state.active_document["folder_path"], llm_model_id, provider)
         
         with col2:
             if st.button("Extract Key Points", type="primary", use_container_width=True):
-                extract_key_points(st.session_state.active_document["folder_path"], llm_model_id)
+                extract_key_points(st.session_state.active_document["folder_path"], llm_model_id, provider)
         
         with col3:
             if st.button("Generate Infographic", type="primary", use_container_width=True):
@@ -846,7 +894,7 @@ def show_chat_ai():
                 
                 # Process the question
                 with st.spinner("AI is thinking..."):
-                    response = query_llm(user_input, model=llm_model_id, operation_type="ask_question")
+                    response = query_llm(user_input, model=llm_model_id, operation_type="ask_question",provider=provider)
                     
                     if response:
                         # Add assistant response to chat history
