@@ -2,10 +2,10 @@ import streamlit as st
 import requests
 import json
 import os
-import datetime
+from datetime import datetime
 import random
 import string
-import datetime as dt
+
 # Alternative function to generate a unique ID without using uuid
 def generate_unique_id(length=12):
     """Generate a random ID string"""
@@ -46,7 +46,7 @@ def query_llm(prompt, model="gpt-4o", operation_type="chat"):
         if 'active_document' not in st.session_state or not st.session_state.active_document:
             st.error("No active document selected")
             return None
-        print("This is a prmompt",prompt)
+            
         # Prepare the payload based on operation type
         if operation_type == "chat" or operation_type == "ask_question":
             endpoint = f"{PDF_API_URL}/ask_question/"
@@ -84,13 +84,13 @@ def query_llm(prompt, model="gpt-4o", operation_type="chat"):
             }
         
         # Calculate start time for processing time tracking
-        start_time = datetime.datetime.now()
+        start_time = datetime.now()
         
         # Make the API request
         response = requests.post(endpoint, json=payload)
         
         # Calculate processing time
-        processing_time = (datetime.datetime.now() - start_time).total_seconds()
+        processing_time = (datetime.now() - start_time).total_seconds()
         
         if response.status_code == 200:
             result = response.json()
@@ -149,13 +149,13 @@ def summarize_document(folder_path, model):
         }
         
         # Calculate start time
-        start_time = datetime.datetime.now()
+        start_time = datetime.now()
         
         # Make API request
         response = requests.post(f"{API_BACKEND_URL}/pdf/summarize/", json=payload)
         
         # Calculate processing time
-        processing_time = (datetime.datetime.now() - start_time).total_seconds()
+        processing_time = (datetime.now() - start_time).total_seconds()
         
         if response.status_code == 200:
             result = response.json()
@@ -184,7 +184,7 @@ def summarize_document(folder_path, model):
             st.session_state.chat_history.append({
                 "role": "system",
                 "content": "Document summary generated",
-                "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
+                "timestamp": datetime.now().strftime("%H:%M:%S")
             })
             
             st.session_state.chat_history.append({
@@ -197,7 +197,7 @@ def summarize_document(folder_path, model):
                 },
                 "model": model,
                 "processing_time": formatted_result["processing_time"],
-                "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
+                "timestamp": datetime.now().strftime("%H:%M:%S")
             })
             
             # Add to usage history
@@ -211,7 +211,7 @@ def summarize_document(folder_path, model):
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "cost": cost,
-                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             })
             
             return formatted_result
@@ -242,13 +242,13 @@ def extract_key_points(folder_path, model):
         }
         
         # Calculate start time
-        start_time = datetime.datetime.now()
+        start_time = datetime.now()
         
         # Make API request
         response = requests.post(f"{API_BACKEND_URL}/pdf/ask_question/", json=payload)
         
         # Calculate processing time
-        processing_time = (datetime.datetime.now() - start_time).total_seconds()
+        processing_time = (datetime.now() - start_time).total_seconds()
         
         if response.status_code == 200:
             result = response.json()
@@ -277,7 +277,7 @@ def extract_key_points(folder_path, model):
             st.session_state.chat_history.append({
                 "role": "system",
                 "content": "Key points extracted",
-                "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
+                "timestamp": datetime.now().strftime("%H:%M:%S")
             })
             
             st.session_state.chat_history.append({
@@ -290,7 +290,7 @@ def extract_key_points(folder_path, model):
                 },
                 "model": model,
                 "processing_time": formatted_result["processing_time"],
-                "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
+                "timestamp": datetime.now().strftime("%H:%M:%S")
             })
             
             # Add to usage history
@@ -304,7 +304,7 @@ def extract_key_points(folder_path, model):
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "cost": cost,
-                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             })
             
             return formatted_result
@@ -701,7 +701,7 @@ def show_chat_ai():
                 # Create a formatted version of the chat history with usage data
                 import json
                 import base64
-                from datetime import datetime
+                # from datetime import datetime
                 
                 # Format the chat history for download
                 download_data = {
@@ -841,7 +841,7 @@ def show_chat_ai():
                 st.session_state.chat_history.append({
                     "role": "user",
                     "content": user_input,
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
                 })
                 
                 # Process the question
@@ -860,7 +860,7 @@ def show_chat_ai():
                             },
                             "model": llm_model_id,
                             "processing_time": response["processing_time"],
-                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "timestamp": datetime.now().strftime("%H:%M:%S")
                         })
                         
                         # Add to usage history
@@ -874,11 +874,12 @@ def show_chat_ai():
                             "input_tokens": response["input_tokens"],
                             "output_tokens": response["output_tokens"],
                             "cost": response["cost"],
-                            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         })
                 
                 # Clear the input field
-                st.session_state.user_question = ""
+                if "user_question" in st.session_state:
+                    del st.session_state.user_question
                 st.rerun()
         
         # File upload section
