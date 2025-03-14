@@ -11,6 +11,312 @@ def generate_unique_id(length=12):
     """Generate a random ID string"""
     return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
 
+def estimate_cost(model, input_tokens, output_tokens):
+    """Estimate cost based on token usage and model"""
+    # Define pricing per 1K tokens
+    model_pricing = {
+        "gpt-4o": {"input": 0.01, "output": 0.03},
+        "claude-3-opus-20240229": {"input": 0.015, "output": 0.075},
+        "claude-3-sonnet-20240229": {"input": 0.008, "output": 0.024},
+        "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},
+        "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
+        "gemini-pro": {"input": 0.0005, "output": 0.0015},
+        "gemini-ultra": {"input": 0.001, "output": 0.003}
+    }
+    
+    # Get pricing for model or use default
+    pricing = model_pricing.get(model, {"input": 0.01, "output": 0.03})
+    
+    # Calculate cost
+    input_cost = (input_tokens / 1000) * pricing["input"]
+    output_cost = (output_tokens / 1000) * pricing["output"]
+    
+    return input_cost + output_cost
+
+def query_llm(prompt, model="gpt-4o", operation_type="chat"):
+    """
+    Send a query to the LLM API
+    """
+    API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:8003')
+    API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8003')
+    PDF_API_URL = f"{API_BACKEND_URL}/pdf"
+    
+    try:
+        # Check if active document exists
+        if 'active_document' not in st.session_state or not st.session_state.active_document:
+            st.error("No active document selected")
+            return None
+            
+        # Prepare the payload based on operation type
+        if operation_type == "chat" or operation_type == "ask_question":
+            endpoint = f"{PDF_API_URL}/ask_question/"
+            payload = {
+                "folder_path": st.session_state.active_document.get("folder_path"),
+                "content_id": st.session_state.active_document.get("content_id"),  # Always include content_id
+                "question": prompt,
+                "model": model,
+                "max_tokens": 1000
+            }
+        
+        elif operation_type == "summarize":
+            # Get the content_id correctly
+            content_id = st.session_state.active_document.get("content_id")
+            
+            endpoint = f"{PDF_API_URL}/summarize/"
+            
+            # Use a consistent approach to build the payload
+            payload = {
+                "folder_path": st.session_state.active_document.get("folder_path"),
+                "content_id": content_id,  # Always include content_id
+                "model": model,
+                "max_length": 1000
+            }
+
+        elif operation_type == "extract_key_points":
+            # Use the ask_question endpoint with a specific prompt
+            endpoint = f"{PDF_API_URL}/ask_question/"
+            payload = {
+                "folder_path": st.session_state.active_document.get("folder_path"),
+                "content_id": st.session_state.active_document.get("content_id"),  # Always include content_id
+                "question": "Extract and list the key points from this document.",
+                "model": model,
+                "max_tokens": 1000
+            }
+        
+        # Calculate start time for processing time tracking
+        start_time = datetime.datetime.now()
+        
+        # Make the API request
+        response = requests.post(endpoint, json=payload)
+        
+        # Calculate processing time
+        processing_time = (datetime.datetime.now() - start_time).total_seconds()
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            # Extract token usage information - adapt to your API response structure
+            if operation_type == "chat" or operation_type == "ask_question":
+                text_field = "answer"
+            else:
+                text_field = "summary"
+                
+            input_tokens = result.get("usage", {}).get("prompt_tokens", 0)
+            output_tokens = result.get("usage", {}).get("completion_tokens", 0)
+            
+            # Estimate cost based on model
+            cost = estimate_cost(model, input_tokens, output_tokens)
+            
+            # Update total token usage for the session
+            st.session_state.total_token_usage["input_tokens"] += input_tokens
+            st.session_state.total_token_usage["output_tokens"] += output_tokens
+            st.session_state.total_token_usage["estimated_cost"] += cost
+            
+            return {
+                "text": result.get(text_field, ""),
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost": cost,
+                "processing_time": processing_time,
+                "model": model
+            }
+        else:
+            st.error(f"API Error: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        st.error(f"Error communicating with PDF API: {str(e)}")
+        return None
+
+def summarize_document(folder_path, model):
+    """Generate a summary of the document"""
+    with st.spinner("Generating document summary..."):
+        API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8003')
+        
+        # Ensure we have the content_id
+        if 'active_document' not in st.session_state or not st.session_state.active_document:
+            st.error("No active document selected")
+            return None
+            
+        # Get the content_id from active document
+        content_id = st.session_state.active_document.get("content_id")
+        
+        # Prepare payload with explicit content_id
+        payload = {
+            "folder_path": folder_path,
+            "content_id": content_id,  # Always include content_id
+            "model": model,
+            "max_length": 1000
+        }
+        
+        # Calculate start time
+        start_time = datetime.datetime.now()
+        
+        # Make API request
+        response = requests.post(f"{API_BACKEND_URL}/pdf/summarize/", json=payload)
+        
+        # Calculate processing time
+        processing_time = (datetime.datetime.now() - start_time).total_seconds()
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            # Extract token usage
+            input_tokens = result.get("usage", {}).get("prompt_tokens", 0)
+            output_tokens = result.get("usage", {}).get("completion_tokens", 0)
+            cost = estimate_cost(model, input_tokens, output_tokens)
+            
+            # Update session token usage
+            st.session_state.total_token_usage["input_tokens"] += input_tokens
+            st.session_state.total_token_usage["output_tokens"] += output_tokens
+            st.session_state.total_token_usage["estimated_cost"] += cost
+            
+            # Format result for chat history
+            formatted_result = {
+                "text": result["summary"],
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost": cost,
+                "processing_time": processing_time,
+                "model": model
+            }
+            
+            # Add to chat history
+            st.session_state.chat_history.append({
+                "role": "system",
+                "content": "Document summary generated",
+                "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
+            })
+            
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": formatted_result["text"],
+                "usage": {
+                    "input_tokens": formatted_result["input_tokens"],
+                    "output_tokens": formatted_result["output_tokens"],
+                    "cost": formatted_result["cost"]
+                },
+                "model": model,
+                "processing_time": formatted_result["processing_time"],
+                "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
+            })
+            
+            # Add to usage history
+            if 'query_usage_history' not in st.session_state:
+                st.session_state.query_usage_history = []
+            
+            st.session_state.query_usage_history.append({
+                "query_type": "summarize",
+                "query": "Document summary request",
+                "model": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost": cost,
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            
+            return formatted_result
+        else:
+            st.error(f"Error generating summary: {response.text}")
+            return None
+
+def extract_key_points(folder_path, model):
+    """Extract key points from the document"""
+    with st.spinner("Extracting key points..."):
+        API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8003')
+        
+        # Ensure we have the content_id
+        if 'active_document' not in st.session_state or not st.session_state.active_document:
+            st.error("No active document selected")
+            return None
+            
+        # Get the content_id from active document
+        content_id = st.session_state.active_document.get("content_id")
+        
+        # Use the ask_question endpoint with a specific question
+        payload = {
+            "folder_path": folder_path,
+            "content_id": content_id,  # Always include content_id
+            "question": "Extract and list the key points from this document.",
+            "model": model,
+            "max_tokens": 1000
+        }
+        
+        # Calculate start time
+        start_time = datetime.datetime.now()
+        
+        # Make API request
+        response = requests.post(f"{API_BACKEND_URL}/pdf/ask_question/", json=payload)
+        
+        # Calculate processing time
+        processing_time = (datetime.datetime.now() - start_time).total_seconds()
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            # Extract token usage
+            input_tokens = result.get("usage", {}).get("prompt_tokens", 0)
+            output_tokens = result.get("usage", {}).get("completion_tokens", 0)
+            cost = estimate_cost(model, input_tokens, output_tokens)
+            
+            # Update session token usage
+            st.session_state.total_token_usage["input_tokens"] += input_tokens
+            st.session_state.total_token_usage["output_tokens"] += output_tokens
+            st.session_state.total_token_usage["estimated_cost"] += cost
+            
+            # Format result for chat history
+            formatted_result = {
+                "text": result["answer"],
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost": cost,
+                "processing_time": processing_time,
+                "model": model
+            }
+            
+            # Add to chat history
+            st.session_state.chat_history.append({
+                "role": "system",
+                "content": "Key points extracted",
+                "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
+            })
+            
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": formatted_result["text"],
+                "usage": {
+                    "input_tokens": formatted_result["input_tokens"],
+                    "output_tokens": formatted_result["output_tokens"],
+                    "cost": formatted_result["cost"]
+                },
+                "model": model,
+                "processing_time": formatted_result["processing_time"],
+                "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
+            })
+            
+            # Add to usage history
+            if 'query_usage_history' not in st.session_state:
+                st.session_state.query_usage_history = []
+            
+            st.session_state.query_usage_history.append({
+                "query_type": "keypoints",
+                "query": "Key points extraction request",
+                "model": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost": cost,
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            
+            return formatted_result
+        else:
+            st.error(f"Error extracting key points: {response.text}")
+            return None
+
+def new_conversation():
+    """Create a new conversation"""
+    st.session_state.chat_history = []
+    st.session_state.conversation_id = generate_unique_id()
+
 def show_chat_ai():
     """Display the chat with AI page content"""
     
@@ -151,21 +457,62 @@ def show_chat_ai():
     """, unsafe_allow_html=True)
     
     # API endpoints
-    API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:8000')
-    LLM_API_URL = f"{API_BASE_URL}/llm"
+    API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:8003')
+    API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8003')
 
     # Initialize session states
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
         
     if 'conversation_id' not in st.session_state:
-        st.session_state.conversation_id = generate_unique_id()  # Use our custom function instead of uuid
+        st.session_state.conversation_id = generate_unique_id()
         
     if 'parsed_documents' not in st.session_state:
         st.session_state.parsed_documents = {}
         
     if 'active_document' not in st.session_state:
         st.session_state.active_document = {}
+    
+    # Initialize available LLMs
+    if 'available_llms' not in st.session_state:
+        try:
+            # Try to fetch from backend
+            response = requests.get(f"{API_BACKEND_URL}/llm/models/")
+            
+            if response.status_code == 200:
+                models = response.json()
+                st.session_state.available_llms = []
+                
+                for model in models:
+                    st.session_state.available_llms.append({
+                        "id": model["id"],
+                        "name": model["id"].split("/")[-1] if "/" in model["id"] else model["id"],
+                        "provider": model["provider"].capitalize()
+                    })
+            else:
+                # Fallback to default models
+                st.session_state.available_llms = [
+                    {"id": "gpt-4o", "name": "GPT-4o", "provider": "OpenAI"},
+                    {"id": "claude-3-sonnet-20240229", "name": "Claude 3 Sonnet", "provider": "Anthropic"},
+                    {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo", "provider": "OpenAI"},
+                    {"id": "gemini-pro", "name": "Gemini Pro", "provider": "Google"}
+                ]
+        except Exception as e:
+            # Fallback to default models if request fails
+            st.session_state.available_llms = [
+                {"id": "gpt-4o", "name": "GPT-4o", "provider": "OpenAI"},
+                {"id": "claude-3-sonnet-20240229", "name": "Claude 3 Sonnet", "provider": "Anthropic"},
+                {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo", "provider": "OpenAI"},
+                {"id": "gemini-pro", "name": "Gemini Pro", "provider": "Google"}
+            ]
+    
+    # Initialize token usage
+    if 'total_token_usage' not in st.session_state:
+        st.session_state.total_token_usage = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "estimated_cost": 0.0
+        }
     
     # Main layout
     st.title("🤖 Chat with AI")
@@ -195,9 +542,9 @@ def show_chat_ai():
         # For this example, we'll use hardcoded prices
         model_prices = {
             "gpt-4o": {"input": "$0.01/1K tokens", "output": "$0.03/1K tokens"},
-            "claude-3-5-sonnet": {"input": "$0.008/1K tokens", "output": "$0.024/1K tokens"},
+            "claude-3-sonnet-20240229": {"input": "$0.008/1K tokens", "output": "$0.024/1K tokens"},
             "gpt-3.5-turbo": {"input": "$0.0005/1K tokens", "output": "$0.0015/1K tokens"},
-            "llama-3-70b": {"input": "$0.0007/1K tokens", "output": "$0.0009/1K tokens"}
+            "gemini-pro": {"input": "$0.0005/1K tokens", "output": "$0.0015/1K tokens"}
         }
         
         # Show pricing for selected model
@@ -208,14 +555,6 @@ def show_chat_ai():
                 - Input: {price_info['input']}
                 - Output: {price_info['output']}
             """)
-        
-        # Track total token usage for the session
-        if 'total_token_usage' not in st.session_state:
-            st.session_state.total_token_usage = {
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "estimated_cost": 0.0
-            }
             
         # Display current session usage
         st.markdown("**Current Session Usage:**")
@@ -231,26 +570,69 @@ def show_chat_ai():
         st.header("📁 Document Manager")
         
         # Document Selection
-        if st.session_state.parsed_documents:
-            st.subheader("Select and Download PDFs")
-            
-            doc_names = list(st.session_state.parsed_documents.keys())
-            selected_doc = st.selectbox("Select a PDF document:", doc_names)
-            
-            if selected_doc:
-                doc_info = st.session_state.parsed_documents[selected_doc]
-                st.text(f"Size: {len(doc_info['content']) // 1000} KB")
+        try:
+            # Request document list from backend
+            response = requests.get(f"{API_BACKEND_URL}/pdf/list_all_pdfs/")
+
+            if response.status_code == 200:
+                result = response.json()
                 
-                if st.button("Set as Active Document", use_container_width=True):
-                    st.session_state.active_document = {
-                        "name": selected_doc,
-                        "content": doc_info["content"],
-                        "type": doc_info["type"]
-                    }
-                    st.rerun()
-        else:
-            st.info("No documents parsed yet. Go to Data Parsing to extract content first.")
-        
+                # Check if result is a dictionary with folder metadata
+                if isinstance(result, dict) and len(result) > 0:
+                    st.subheader(f"Available Documents ({len(result)})")
+                    
+                    # Create selection options
+                    doc_options = {}
+                    for content_id, doc_info in result.items():
+                        folder_name = doc_info.get('folder_name', 'Unknown')
+                        has_markdown = doc_info.get('has_markdown', False)
+                        status = "✅" if has_markdown else "⏳"
+                        
+                        # Add status indicator to show if markdown is available
+                        doc_options[f"{folder_name} {status}"] = {
+                            "content_id": content_id,
+                            "folder_path": doc_info.get('folder_path')
+                        }
+                    
+                    selected_doc_name = st.selectbox("Select a document:", list(doc_options.keys()))
+                    
+                    if selected_doc_name and st.button("Set as Active Document", use_container_width=True):
+                        selected_doc_info = doc_options[selected_doc_name]
+                        selected_content_id = selected_doc_info["content_id"]
+                        selected_folder_path = selected_doc_info["folder_path"]
+                        
+                        # Get document info
+                        response = requests.post(
+                            f"{API_BACKEND_URL}/pdf/select_pdfcontent/", 
+                            json={
+                                "content_id": selected_content_id,
+                                "folder_path": selected_folder_path
+                                }
+                        )
+                        
+                        if response.status_code == 200:
+                            doc_info = response.json()
+                        
+                            # Set as active document - ensure all required fields are present
+                            st.session_state.active_document = {
+                                "name": doc_info.get("folder_name", "Unknown Document"),
+                                "id": selected_content_id,
+                                "content_id": selected_content_id,  # Explicitly set content_id
+                                "folder_path": selected_folder_path,
+                                "type": "pdf",
+                                "has_markdown": doc_info.get("has_markdown", False),
+                                "markdown_content": doc_info.get("markdown_content", "")
+                            }
+                            
+                            st.success(f"Document loaded: {doc_info.get('folder_name', 'Unknown Document')}")
+                            st.rerun()
+                else:
+                    st.info("No documents available. Upload a PDF document to begin.")
+            else:
+                st.error(f"Error loading documents: {response.status_code}")
+                
+        except Exception as e:
+            st.error(f"Error loading documents: {str(e)}")  # Display error message      
         # Conversation Controls
         st.markdown("---")
         st.header("💬 Conversation")
@@ -267,7 +649,9 @@ def show_chat_ai():
             <div class="document-selector">
                 <p><strong>Current Document:</strong> {st.session_state.active_document["name"]} 
                 ({st.session_state.active_document["type"].upper()})</p>
-                <p>Content Length: {len(st.session_state.active_document["content"]) // 1000} KB</p>
+                <p>Document ID: {st.session_state.active_document["id"]}</p>
+                <p>Content ID: {st.session_state.active_document["content_id"]}</p>
+                <p>Folder Path: {st.session_state.active_document["folder_path"]}</p>
             </div>
             """,
             unsafe_allow_html=True
@@ -278,17 +662,17 @@ def show_chat_ai():
         
         with col1:
             if st.button("Get Summary", type="primary", use_container_width=True):
-                summarize_document(st.session_state.active_document["content"], llm_model_id)
+                summarize_document(st.session_state.active_document["folder_path"], llm_model_id)
         
         with col2:
             if st.button("Extract Key Points", type="primary", use_container_width=True):
-                extract_key_points(st.session_state.active_document["content"], llm_model_id)
+                extract_key_points(st.session_state.active_document["folder_path"], llm_model_id)
         
         with col3:
             if st.button("Generate Infographic", type="primary", use_container_width=True):
                 st.info("Infographic generation will be implemented in a future update")
     else:
-        st.warning("No document is currently active. Please select a document from the sidebar or parse a new document.")
+        st.warning("No document is currently active. Please select a document from the sidebar or upload a new document.")
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -438,355 +822,131 @@ def show_chat_ai():
         </div>
         """, unsafe_allow_html=True)
         
-        # Define process question function
-        def process_question():
-            """Process the user question when Enter is pressed"""
-            user_question = st.session_state.user_question_input
+        # Create columns for the input field and submit button
+        col1, col2 = st.columns([5, 1])
+        
+        with col1:
+            user_input = st.text_input("", placeholder="Type your question here...", key="user_question")
             
-            if user_question:
-                if not st.session_state.active_document:
-                    st.error("Please select a document first.")
-                    return
-                    
+        with col2:
+            send_button = st.button("Send", key="send_question")
+        
+        # Handle question submission
+        if send_button and user_input:
+            # Check if document is selected
+            if not st.session_state.active_document:
+                st.warning("Please select a document first to ask questions about it.")
+            else:
                 # Add user message to chat history
                 st.session_state.chat_history.append({
                     "role": "user",
-                    "content": user_question,
+                    "content": user_input,
                     "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
                 })
                 
-                # Call LLM API
-                with st.spinner("Thinking..."):
-                    result = query_llm(
-                        prompt=user_question,
-                        model=llm_model_id,
-                        document_content=st.session_state.active_document["content"],
-                        operation_type="chat"
-                    )
+                # Process the question
+                with st.spinner("AI is thinking..."):
+                    response = query_llm(user_input, model=llm_model_id, operation_type="ask_question")
                     
-                    if result:
+                    if response:
                         # Add assistant response to chat history
-                        message_with_tokens = {
+                        st.session_state.chat_history.append({
                             "role": "assistant",
-                            "content": result["text"],
+                            "content": response["text"],
                             "usage": {
-                                "input_tokens": result["input_tokens"],
-                                "output_tokens": result["output_tokens"],
-                                "cost": result["cost"]
+                                "input_tokens": response["input_tokens"],
+                                "output_tokens": response["output_tokens"],
+                                "cost": response["cost"]
                             },
-                            "model": result["model"],
-                            "processing_time": result["processing_time"],
+                            "model": llm_model_id,
+                            "processing_time": response["processing_time"],
                             "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
-                        }
-                        st.session_state.chat_history.append(message_with_tokens)
+                        })
                         
-                        # Add usage information for this query to the session state
+                        # Add to usage history
                         if 'query_usage_history' not in st.session_state:
                             st.session_state.query_usage_history = []
                         
                         st.session_state.query_usage_history.append({
-                            "query_type": "chat",
-                            "query": user_question[:50] + "..." if len(user_question) > 50 else user_question,
-                            "model": result["model"],
-                            "input_tokens": result["input_tokens"],
-                            "output_tokens": result["output_tokens"],
-                            "cost": result["cost"],
+                            "query_type": "question",
+                            "query": user_input,
+                            "model": llm_model_id,
+                            "input_tokens": response["input_tokens"],
+                            "output_tokens": response["output_tokens"],
+                            "cost": response["cost"],
                             "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         })
-                        
-                        # Clear the input field
-                        st.session_state.user_question_input = ""
+                
+                # Clear the input field
+                st.session_state.user_question = ""
+                st.rerun()
         
-        # Create a layout with columns for input and file upload
-        col1, col2 = st.columns([20, 1])
+        # File upload section
+        st.markdown("### Upload Document")
+        uploaded_file = st.file_uploader("Choose a PDF file", type=["pdf"], key="pdf_uploader")
         
-        with col1:
-            # Use on_change event for text input
-            user_input = st.text_input(
-                "Type your question about the document and press Enter",
-                placeholder="What is the main topic of this document?",
-                key="user_question_input",
-                on_change=process_question,
-                label_visibility="collapsed"
-            )
-        
-        with col2:
-            # Add minimal file uploader with just the icon visible
-            uploaded_file = st.file_uploader("", type=["pdf"], key="quick_upload", label_visibility="collapsed")
-            
-            # # Display paperclip icon using a Unicode paperclip: 📎
-            # st.markdown('<div class="paperclip-icon">📎</div>', unsafe_allow_html=True)
-            
-            if uploaded_file:
-                # Show a process button only if a file is uploaded
-                st.markdown("<div style='height: 5px'></div>", unsafe_allow_html=True)
-                if st.button("Process", key="quick_process", use_container_width=True):
-                    with st.spinner("Processing..."):
-                        import time
-                        time.sleep(2)
+        if uploaded_file is not None:
+            with st.spinner("Processing document..."):
+                # Prepare the file for upload
+                API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8003')
+                
+                try:
+                    # Create a unique ID for this upload
+                    upload_id = generate_unique_id()
+                    
+                    # Create form data for the file upload
+                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
+                    
+                    # Make the API request to upload the file
+                    response = requests.post(
+                        f"{API_BACKEND_URL}/pdf/upload_pdf/", 
+                        files=files
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
                         
-                        # Create a unique document ID
-                        doc_id = generate_unique_id()
+                        st.success(f"Document uploaded successfully: {uploaded_file.name}")
                         
-                        # Simulated extraction content
-                        extracted_content = f"Content from {uploaded_file.name}. This is a placeholder."
+                        # Add the document to the parsed documents list
+                        content_id = result.get("content_id")
+                        folder_path = result.get("folder_path")
                         
-                        # Add to parsed documents
-                        st.session_state.parsed_documents[uploaded_file.name] = {
-                            "content": extracted_content,
-                            "type": "pdf",
-                            "extraction_engine": "quick_upload",
-                            "date_added": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "id": doc_id
-                        }
-                        
-                        # Set as active document
+                        # Set as active document - ensure content_id is explicitly set
                         st.session_state.active_document = {
                             "name": uploaded_file.name,
-                            "content": extracted_content,
+                            "id": content_id,
+                            "content_id": content_id,  # Explicitly set content_id
+                            "folder_path": folder_path,
                             "type": "pdf",
-                            "id": doc_id
+                            "has_markdown": False  # Initially false until processing completes
                         }
                         
-                        st.success(f"Document processed")
+                        st.info("Document is being processed. It will be available for queries once processing completes.")
                         st.rerun()
+                    else:
+                        st.error(f"Error uploading document: {response.text}")
+                except Exception as e:
+                    st.error(f"Error during upload: {str(e)}")
 
+# Entry point for the Streamlit application
+def main():
+    # Set page config
+    st.set_page_config(
+        page_title="Document AI Chat",
+        page_icon="📄",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
     
-    # Display token usage and cost information
-    with st.expander("💰 View Token Usage and Pricing Details", expanded=False):
-        st.markdown("### Token Usage and Pricing Information")
-        st.markdown("""
-        LLMs charge based on the number of tokens processed. Tokens are pieces of words, and pricing varies by model:
-        
-        - **Input tokens**: Text sent to the model (your question + document context)
-        - **Output tokens**: Text generated by the model (the response)
-        """)
-        
-        # Create a table showing pricing for available models
-        st.markdown("#### Model Pricing (per 1,000 tokens)")
-        
-        pricing_data = []
-        for model in st.session_state.available_llms:
-            model_id = model["id"]
-            # This would come from your actual pricing data in a real implementation
-            input_price = "$0.01" if model_id == "gpt-4o" else "$0.008" if model_id == "claude-3-5-sonnet" else "$0.0005"
-            output_price = "$0.03" if model_id == "gpt-4o" else "$0.024" if model_id == "claude-3-5-sonnet" else "$0.0015"
-            
-            pricing_data.append(f"| {model['name']} | {input_price} | {output_price} |")
-        
-        pricing_table = """
-        | Model | Input Price | Output Price |
-        | ----- | ----------- | ------------ |
-        """ + "\n".join(pricing_data)
-        
-        st.markdown(pricing_table)
-        
-        # Show current session usage
-        st.markdown("#### Current Session Usage")
-        st.markdown(f"""
-        - **Total Input Tokens**: {st.session_state.total_token_usage['input_tokens']:,}
-        - **Total Output Tokens**: {st.session_state.total_token_usage['output_tokens']:,}
-        - **Estimated Total Cost**: ${st.session_state.total_token_usage['estimated_cost']:.4f}
-        """)
-
-def query_llm(prompt, model="gpt-4o", document_content=None, operation_type="chat"):
-    """
-    Send a query to the LLM API
-    Parameters:
-    - prompt: The user's question or instruction
-    - model: LLM model to use
-    - document_content: Document content for context
-    - operation_type: Type of operation (chat, summarize, extract_key_points)
-    """
-    API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:8000')
-    API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8000')
-    LLM_API_URL = f"{API_BACKEND_URL}/llm"
+    # Check if current page is set
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = "chat_ai"
     
-    # Select the appropriate endpoint based on operation type
-    if operation_type == "chat":
-        endpoint = f"{LLM_API_URL}/ask_question"
-    elif operation_type == "summarize":
-        endpoint = f"{LLM_API_URL}/summarize"
-    elif operation_type == "extract_key_points":
-        endpoint = f"{LLM_API_URL}/extract_keypoints"
-    else:
-        endpoint = f"{LLM_API_URL}/generate"
+    # Display the current page
+    if st.session_state.current_page == "chat_ai":
+        show_chat_ai()
+    # Add other pages as needed
     
-    try:
-        # Prepare the payload
-        payload = {
-            "prompt": prompt,
-            "model": model,
-            "operation_type": operation_type,
-            "conversation_id": st.session_state.conversation_id
-        }
-        
-        # Include document content if available
-        if document_content:
-            payload["document_content"] = document_content
-            
-        # If we have an active document with an ID, include it
-        if 'active_document' in st.session_state and st.session_state.active_document.get('id'):
-            payload["document_id"] = st.session_state.active_document.get('id')
-            
-        # Make the API request
-        response = requests.post(
-            endpoint,
-            json=payload
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            
-            # Extract token usage information
-            input_tokens = result.get("usage", {}).get("input_tokens", 0)
-            output_tokens = result.get("usage", {}).get("output_tokens", 0)
-            cost = result.get("usage", {}).get("cost", 0)
-            
-            # Update total token usage for the session
-            st.session_state.total_token_usage["input_tokens"] += input_tokens
-            st.session_state.total_token_usage["output_tokens"] += output_tokens
-            st.session_state.total_token_usage["estimated_cost"] += cost
-            
-            # Log token usage for this request
-            print(f"LLM Request - Model: {model}, Input tokens: {input_tokens}, Output tokens: {output_tokens}, Cost: ${cost:.6f}")
-            
-            return {
-                "text": result.get("response", ""),
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "cost": cost,
-                "processing_time": result.get("processing_time", 0),
-                "model": model
-            }
-        else:
-            st.error(f"API Error: {response.status_code} - {response.text}")
-            return None
-    except Exception as e:
-        st.error(f"Error communicating with LLM API: {str(e)}")
-        return None
-
-def new_conversation():
-    """Create a new conversation"""
-    st.session_state.chat_history = []
-    st.session_state.conversation_id = generate_unique_id()  # Use our custom ID generator
-
-def summarize_document(document_content, model):
-    """Generate a summary of the document"""
-    with st.spinner("Generating document summary..."):
-        result = query_llm(
-            prompt="Provide a comprehensive summary of this document.",
-            model=model,
-            document_content=document_content,
-            operation_type="summarize"
-        )
-        
-        if result:
-            # Add to chat history with detailed token usage information
-            message_with_tokens = {
-                "role": "system",
-                "content": "Document summary generated",
-                "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
-            }
-            st.session_state.chat_history.append(message_with_tokens)
-            
-            message_with_tokens = {
-                "role": "assistant",
-                "content": result["text"],
-                "usage": {
-                    "input_tokens": result["input_tokens"],
-                    "output_tokens": result["output_tokens"],
-                    "cost": result["cost"]
-                },
-                "model": result["model"],
-                "processing_time": result["processing_time"],
-                "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
-            }
-            st.session_state.chat_history.append(message_with_tokens)
-            
-            # Add usage information for this query to the session state
-            if 'query_usage_history' not in st.session_state:
-                st.session_state.query_usage_history = []
-            
-            st.session_state.query_usage_history.append({
-                "query_type": "summarize",
-                "query": "Document summary request",
-                "model": result["model"],
-                "input_tokens": result["input_tokens"],
-                "output_tokens": result["output_tokens"],
-                "cost": result["cost"],
-                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            })
-            return result
-        return None
-
-def extract_key_points(document_content, model):
-    """Extract key points from the document"""
-    with st.spinner("Extracting key points..."):
-        result = query_llm(
-            prompt="Extract the key points from this document.",
-            model=model,
-            document_content=document_content,
-            operation_type="extract_key_points"
-        )
-        
-        if result:
-            # Add to chat history with detailed token usage information
-            message_with_tokens = {
-                "role": "system",
-                "content": "Key points extracted",
-                "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
-            }
-            st.session_state.chat_history.append(message_with_tokens)
-            
-            message_with_tokens = {"role": "assistant",
-                "content": result["text"],
-                "usage": {
-                    "input_tokens": result["input_tokens"],
-                    "output_tokens": result["output_tokens"],
-                    "cost": result["cost"]
-                },
-                "model": result["model"],
-                "processing_time": result["processing_time"],
-                "timestamp": datetime.datetime.now().strftime("%H:%M:%S")
-            }
-            st.session_state.chat_history.append(message_with_tokens)
-            
-            # Add usage information for this query to the session state
-            if 'query_usage_history' not in st.session_state:
-                st.session_state.query_usage_history = []
-            
-            st.session_state.query_usage_history.append({
-                "query_type": "keypoints",
-                "query": "Key points extraction request",
-                "model": result["model"],
-                "input_tokens": result["input_tokens"],
-                "output_tokens": result["output_tokens"],
-                "cost": result["cost"],
-                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            })
-            return result
-        return None
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+if __name__ == "__main__":
+    main()
