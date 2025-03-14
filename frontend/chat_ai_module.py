@@ -889,7 +889,7 @@ def show_chat_ai():
         if uploaded_file is not None:
             with st.spinner("Processing document..."):
                 # Prepare the file for upload
-                API_BACKEND_URL = os.getenv('API_BACKEND_URL', 'http://localhost:8003')
+                API_OP_URL = os.getenv('API_OP_URL', 'http://localhost:8001')
                 
                 try:
                     # Create a unique ID for this upload
@@ -900,31 +900,36 @@ def show_chat_ai():
                     
                     # Make the API request to upload the file
                     response = requests.post(
-                        f"{API_BACKEND_URL}/pdf/upload_pdf/", 
+                        f"{API_OP_URL}/pdf-process/opensource", 
                         files=files
                     )
+                    if response.status_code != 200:
+                        st.error(f"PDF Extraction API Error: {response.json().get('detail', 'Unknown error')}")
+                        return None
                     
-                    if response.status_code == 200:
+                    result_data = response.json()
+                    
+                    if result_data["status"] == "success":
                         result = response.json()
                         
                         st.success(f"Document uploaded successfully: {uploaded_file.name}")
                         
-                        # Add the document to the parsed documents list
-                        content_id = result.get("content_id")
-                        folder_path = result.get("folder_path")
+                        # # Add the document to the parsed documents list
+                        # content_id = result.get("content_id")
+                        # folder_path = result.get("folder_path")
                         
-                        # Set as active document - ensure content_id is explicitly set
-                        st.session_state.active_document = {
-                            "name": uploaded_file.name,
-                            "id": content_id,
-                            "content_id": content_id,  # Explicitly set content_id
-                            "folder_path": folder_path,
-                            "type": "pdf",
-                            "has_markdown": False  # Initially false until processing completes
-                        }
+                        # # Set as active document - ensure content_id is explicitly set
+                        # st.session_state.active_document = {
+                        #     "name": uploaded_file.name,
+                        #     "id": content_id,
+                        #     "content_id": content_id,  # Explicitly set content_id
+                        #     "folder_path": folder_path,
+                        #     "type": "pdf",
+                        #     "has_markdown": False  # Initially false until processing completes
+                        # }
                         
-                        st.info("Document is being processed. It will be available for queries once processing completes.")
-                        st.rerun()
+                        # st.info("Document is being processed. It will be available for queries once processing completes.")
+                       
                     else:
                         st.error(f"Error uploading document: {response.text}")
                 except Exception as e:
