@@ -5,7 +5,7 @@ import boto3
 import uuid
 from datetime import datetime
 import re
-import fitz  # PyMuPDF for PDF processing
+import fitz  # PyMuPDF for PDF processing  # PyMuPDF for PDF processing # PyMuPDF for PDF processing  # PyMuPDF for PDF processing
 from PIL import Image
 import io
 import numpy as np
