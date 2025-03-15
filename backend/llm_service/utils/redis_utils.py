@@ -6,6 +6,7 @@ import logging
 from typing import Dict, Any, List, Optional, Callable, Union
 from loguru import logger
 
+
 class RedisManager:
     """Utility class for Redis operations including streams"""
     
@@ -208,3 +209,74 @@ class RedisManager:
             return True
         except Exception as e:
             logger.error(f"Redis stream_create_consumer_group error: {str(e)}")
+            
+
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+def get_redis_connection():
+    """
+    Returns a connection to the Redis server.
+    
+    Returns:
+        redis.Redis: A Redis client connection
+    """
+    try:
+        # Get Redis configuration from environment variables or use defaults
+        redis_host = os.getenv('REDIS_HOST', 'localhost')
+        redis_port = int(os.getenv('REDIS_PORT', 6379))
+        redis_db = int(os.getenv('REDIS_DB', 0))
+        redis_password = os.getenv('REDIS_PASSWORD', None)
+        
+        # Log connection attempt
+        logger.info(f"Attempting to connect to Redis at {redis_host}:{redis_port} (DB: {redis_db})")
+        
+        # Create and return the Redis connection
+        redis_client = redis.Redis(
+            host=redis_host,
+            port=redis_port,
+            db=redis_db,
+            password=redis_password,
+            decode_responses=True  # Automatically decode responses to Python strings
+        )
+        
+        # Test the connection
+        redis_client.ping()
+        logger.info("Redis connection successful")
+        
+        return redis_client
+    except redis.ConnectionError as e:
+        logger.error(f"Redis connection error: {str(e)}")
+        # Return a dummy Redis client that logs operations instead of failing
+        return DummyRedisClient()
+    except Exception as e:
+        logger.error(f"Error setting up Redis: {str(e)}")
+        # Return a dummy Redis client that logs operations instead of failing
+        return DummyRedisClient()
+
+class DummyRedisClient:
+    """A dummy Redis client that logs operations instead of actually connecting to Redis"""
+    
+    def __init__(self):
+        self.data = {}
+        logger.warning("Using dummy Redis client - no actual Redis connection")
+    
+    def get(self, key):
+        logger.info(f"Dummy Redis - GET operation for key: {key}")
+        return self.data.get(key)
+    
+    def set(self, key, value, ex=None):
+        logger.info(f"Dummy Redis - SET operation for key: {key}")
+        self.data[key] = value
+        return True
+    
+    def delete(self, key):
+        logger.info(f"Dummy Redis - DELETE operation for key: {key}")
+        if key in self.data:
+            del self.data[key]
+        return 1
+    
+    def ping(self):
+        logger.info("Dummy Redis - PING operation")
+        return True
