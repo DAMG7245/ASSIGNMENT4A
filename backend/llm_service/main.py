@@ -1,20 +1,23 @@
 from fastapi import FastAPI
 import logging
-from loguru import logger
 import os
 
 from routes import llm_routes
 from routes import pdf_routes
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging with standard library
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 log = logging.getLogger(__name__)
 
 # Set up environment based on configuration
 APP_ENV = os.getenv("APP_ENV", "development")
 DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "t")
 
-logger.info(f"Starting application in {APP_ENV} mode")
+log.info(f"Starting application in {APP_ENV} mode")
 
 # Create FastAPI instance
 app = FastAPI(
@@ -42,7 +45,9 @@ async def root():
             "/pdf/select_pdfcontent/": "Select previously parsed PDF content",
             "/pdf/upload_pdf/": "Upload and process a new PDF document",
             "/pdf/summarize/": "Generate a summary of PDF content",
-            "/pdf/ask_question/": "Ask questions about PDF content"
+            "/pdf/ask_question/": "Ask questions about PDF content",
+            "/pdf/extract_keypoints/": "Extract key points from PDF content",
+            "/pdf/list_all_pdfs/": "List all available PDF contents"
         }
     }
 
