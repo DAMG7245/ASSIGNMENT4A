@@ -287,7 +287,7 @@ class PdfConverter:
                     logger.error(f"Failed to save markdown: {str(e)}")
                     return {'status': 'error', 'message': f"Failed to save markdown: {str(e)}"}
 
-                markdown_s3_key = f"{base_s3_path}/markdown/{base_filename}.md"
+                markdown_s3_key = f"{base_s3_path}/markdown/content.md"
                 if not self.upload_to_s3(markdown_path, markdown_s3_key):
                     return {'status': 'error', 'message': "Failed to upload markdown to S3"}
 
