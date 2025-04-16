@@ -11,6 +11,15 @@ PDF Query Assistant is a web application that allows users to upload PDF documen
 
 The application is built with a modern stack including Streamlit for the frontend, FastAPI for the backend, and LiteLLM for managing connections to various LLM providers.
 
+## Project Links and Resources
+
+- **Codelabs Documentation**: [Codelabs Guide](https://codelabs-preview.appspot.com/?file_id=1nJm3Fy18WSof_842AEghsUayO015ErjmJPdaO9sauho/edit?tab=t.5cpih9qtxm58#0)  
+- **Project Submission Video (5 Minutes)**: [View on Google Drive](https://drive.google.com/drive/u/1/folders/1898HGutXjQIxwx3OVnr_Yvx9Uq_SKAE1)  
+- **Hosted Application Links**:  
+  - **Frontend (Streamlit)**: [http://104.248.126.152:8501/](http://104.248.126.152:8501/)  
+  - **Backend (FastAPI)**: [http://104.248.126.152:8000/](http://104.248.126.152:8000/)
+
+
 ## Architecture
 
 ![pdf_query_assistant_architecture](https://github.com/user-attachments/assets/c0446ca5-f13c-4de8-8695-0281500dbe22)
